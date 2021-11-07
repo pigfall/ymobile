@@ -3,7 +3,13 @@
    <application
         android:label="ymobile"
         android:icon="@mipmap/ic_launcher">
-        <activity
+       <service android:name=".YingTunnelService"
+           android:permission="android.permission.BIND_VPN_SERVICE" android:exported="true">
+           <intent-filter>
+               <action android:name="android.net.VpnService"/>
+           </intent-filter>
+       </service>
+       <activity
             android:name=".MainActivity"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
