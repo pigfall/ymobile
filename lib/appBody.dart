@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'client_cfg.dart';
 
 class AppBody extends StatefulWidget {
@@ -19,10 +20,40 @@ enum ConnStatus {
 }
 
 class _AppBodyState extends State<AppBody> {
+  static const platform = MethodChannel("ying");
   bool hasloadedConnCfgs = false;
   bool needMannulTriggerLoad = false;
   ConnStatus connStatus = ConnStatus.DISCONNECTED;
   late List<ClientCfg> cfgs;
+  ClientCfg? curConnCfg;
+  _AppBodyState() {
+    platform.setMethodCallHandler((call) {
+      if (call.method == "onConnectFailed") {
+        showDialog(
+            context: context,
+            builder: (context) {
+              return AlertDialog(
+                title: Text("Connected Failed"),
+                content: Text("${call}"),
+                actions: [
+                  TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      child: Text("close"))
+                ],
+              );
+            });
+        setState(() {
+          this.connStatus = ConnStatus.DISCONNECTED;
+        });
+      } else {
+        print("BUG undefined method ${call.method}");
+        throw (Exception("BUG undefined method ${call.method}"));
+      }
+      return Future.value(0);
+    });
+  }
   @override
   Widget build(BuildContext context) {
     if (!this.hasloadedConnCfgs) {
@@ -62,6 +93,9 @@ class _AppBodyState extends State<AppBody> {
                   break;
                 case ConnStatus.DISCONNECTING:
                   throw (Exception("BUG unreachable"));
+                case ConnStatus.CONNECTED:
+                  this.disconnectTunnel();
+                  break;
                 default:
                   throw (Exception(
                       "BUG undefined connStatus ${this.connStatus}"));
@@ -78,12 +112,38 @@ class _AppBodyState extends State<AppBody> {
   void connectTunnel(ClientCfg cfg) {
     setState(() {
       this.connStatus = ConnStatus.CONNECING;
+      this.curConnCfg = cfg;
+    });
+    platform.invokeMethod("connect").catchError((e) {
+      showDialog(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text("Connect failed ${e}"),
+              actions: [
+                TextButton(
+                    onPressed: () {
+                      setState(() {
+                        this.connStatus = ConnStatus.DISCONNECTED;
+                        this.curConnCfg = null;
+                      });
+                      Navigator.pop(context);
+                    },
+                    child: Text("close"))
+              ],
+            );
+          });
+    }).then((value) {
+      //setState(() {
+      //  this.connStatus = ConnStatus.CONNECTED;
+      //});
     });
   }
 
   void disconnectTunnel() {
     setState(() {
       this.connStatus = ConnStatus.DISCONNECTING;
+      this.curConnCfg = null;
     });
     showDialog(
         context: context,

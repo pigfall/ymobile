@@ -11,12 +11,14 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.Exception
 import java.lang.reflect.Executable
+import java.lang.reflect.Method
 import java.net.DatagramPacket
 import java.net.InetSocketAddress
 import java.net.SocketAddress
@@ -27,6 +29,9 @@ import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 
 class MainActivity: FlutterActivity(){
+    companion object {
+        var binaryMsg :BinaryMessenger? =null;
+    }
     var yingTunnelSvc:YingTunnelService = YingTunnelService()
     var  REQ_CODE_QUERY_PERMISSION_TO_CREATE_TUNNEL_DEV= 0
     var hasPermissionToCreateTunnelDev = false
@@ -35,12 +40,14 @@ class MainActivity: FlutterActivity(){
     }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        binaryMsg = flutterEngine.dartExecutor.binaryMessenger;
         // this.requestPermission()
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"yingying").setMethodCallHandler{
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"ying").setMethodCallHandler{
             call, result ->
             Log.i("","methodChannel call")
             when(call.method){
-                "connectTunnel"-> {
+                "connect"-> {
+                    // result.success("");
                     stopService(Intent(this,YingTunnelService::class.java))
                     Log.i("","req permission for create tun device")
                     var requestTunnelPermissionIntent:Intent? = VpnService.prepare(applicationContext)
@@ -186,56 +193,25 @@ class YingTunnelService:VpnService(){
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-            Log.i("","onStartComamnd called")
-            startConnection()
-            //thread{
-            //    coroutineScope {
-
-            //    }
-            //    try {
-            //        // TODO
-            //        var tunnel:DatagramChannel = DatagramChannel.open()
-            //        var socket = tunnel.socket()
-            //        this.protect(socket)
-            //        socket.connect(InetSocketAddress("107.155.15.21",10101))
-            //        Log.i("","builder")
-            //        var builder  = Builder()
-            //        val localTunnel = builder
-            //            .addAddress("10.8.1.20", 24)
-            //            .addRoute("0.0.0.0", 0)
-            //            .addDnsServer("8.8.8.8")
-            //            .establish()
-            //        if (localTunnel != null){
-            //            // Allocate the buffer for a single packet.
-            //            var packetBuffer     = ByteBuffer.allocate(65535)
-            //            var bytesSendToServer = ByteArray(65536);
-            //            var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
-            //            var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
-            //            while (true){
-            //                Log.i("","reading packet")
-            //                var length = packetReadFromIfce.read(packetBuffer.array())
-            //                if (length >0){
-            //                    Log.i("read byte",packetBuffer.array().toString())
-            //                    bytesSendToServer[0] = 0
-            //                    var  bytesIpPacket = packetBuffer.array()
-            //                    bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
-            //                    socket.send(DatagramPacket(bytesSendToServer,0,length+1))
-            //                }else{
-            //                    Log.i("read byte"," length is 0")
-            //                }
-            //                Thread.sleep(1000)
-            //                packetBuffer.clear()
-            //            }
-            //        }else{
-            //            Log.e("","create tun dev failed")
-            //        }
-            //    }catch(e:SocketException){
-            //        Log.e("",e.toString())
-            //    }finally {
-            //        // TODO
-            //        stopSelf()
-            //    }
-            //}
+            try{
+                MethodChannel(MainActivity.binaryMsg,"ying").invokeMethod("onConnectFailed","",object:MethodChannel.Result{
+                    override fun success(result: Any?) {
+                        Log.d("Android", "result = $result")
+                    }
+                    override fun error(errorCode: String?, errorMessage: String?, errorDetails: Any?) {
+                        Log.d("Android", "$errorCode, $errorMessage, $errorDetails")
+                    }
+                    override fun notImplemented() {
+                        Log.d("Android", "notImplemented")
+                    }
+                })
+                Log.i("","call method channel")
+                // TODO
+                // startConnection();
+            }catch(e:Exception){
+                // MethodChannel(MainActivity.binaryMsg,"onConnectFailed")
+                Log.i("",e.toString());
+            }
             return VpnService.START_NOT_STICKY
     }
 }
