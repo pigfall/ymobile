@@ -1,5 +1,11 @@
+import 'dart:async';
+import 'package:async/async.dart' show CancelableOperation;
+import 'appBody.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:tzz_dart_utils/flutter_widgets/switch_button.dart'
+    show ButtonSwitch;
 
 void main() {
   runApp(const MyApp());
@@ -51,6 +57,11 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel("yingying");
   int _counter = 0;
+  bool turnOn = false;
+  Future? prevConn = Future.value();
+  String status = "";
+  String curConnCfgId = "";
+  bool pending = false;
 
   void _incrementCounter() {
     setState(() {
@@ -63,8 +74,22 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  void _connectToTunnel() {
-    platform.invokeMethod("connectTunnel");
+  Future _connectToTunnel() {
+    return platform.invokeMethod("connectTunnel");
+  }
+
+  Future fakeConnect() {
+    return Future.delayed(Duration(seconds: 3), () {
+      print("sleep over");
+      return "Test";
+    });
+  }
+
+  Future<String> sleep() {
+    return Future.delayed(Duration(seconds: 10), () {
+      print("sleep over");
+      return "Test";
+    });
   }
 
   @override
@@ -82,34 +107,7 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
-        ),
+        child: AppBody(),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _connectToTunnel,
