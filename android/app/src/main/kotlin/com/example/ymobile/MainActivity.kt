@@ -19,10 +19,8 @@ import java.io.FileOutputStream
 import java.lang.Exception
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
-import java.net.DatagramPacket
-import java.net.InetSocketAddress
-import java.net.SocketAddress
-import java.net.SocketException
+import java.net.*
+import java.nio.Buffer
 import java.nio.ByteBuffer
 import java.nio.channels.DatagramChannel
 import kotlin.concurrent.thread
@@ -43,7 +41,7 @@ class MainActivity: FlutterActivity(){
         binaryMsg = flutterEngine.dartExecutor.binaryMessenger;
         // this.requestPermission()
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"ying").setMethodCallHandler{
-            call, result ->
+                call, result ->
             Log.i("","methodChannel call")
             when(call.method){
                 "connect"-> {
@@ -95,68 +93,167 @@ class TzzViewMode:ViewModel(){
 
 
 class TunnelConn {
-    var job : Job? =null;
+    var jobTunIfceRead : Job? =null;
+    var jobConnRead: Job? =null;
     fun disconnect(){
         Log.i("","disconnect tunnelConn, job canel, thread interrupt")
-        job!!.cancel();
+        jobTunIfceRead!!.cancel();
+        jobConnRead!!.cancel();
         Log.i("","waiting job stop")
         runBlocking {
-            job!!.join()
+            jobTunIfceRead!!.join()
+            jobConnRead!!.join()
             Log.i("","job stop in runBlocking")
         }
         Log.i("","diconnected")
     }
 
+    suspend fun tmp(tunnelSvc: YingTunnelService){
+        coroutineScope {
+            try{
+                var tunnel:DatagramChannel = DatagramChannel.open()
+                var socket = tunnel.socket()
+                tunnelSvc.protect(socket)
+                var remoteAddr = "107.155.15.21"
+                Log.i("","connect to address ${remoteAddr}")
+                socket.connect(InetSocketAddress(remoteAddr,10101))
+                Log.i("","suc connect address ${remoteAddr}")
+                jobTunIfceRead = launch {
+                    Log.i("","start svc")
+                    var builder  = tunnelSvc.Builder()
+                    val localTunnel = builder
+                        .addAddress("10.8.1.20", 24)
+                        .addRoute("0.0.0.0", 0)
+                        .addDnsServer("8.8.8.8")
+                        .establish()
+                    if (localTunnel != null){
+                        // Allocate the buffer for a single packet.
+                        var packetBuffer     = ByteBuffer.allocate(65535)
+                        var bytesSendToServer = ByteArray(65536);
+                        var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
+                        var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
+                        while (isActive){
+                            Log.i("","reading packet")
+                            var length = packetReadFromIfce.read(packetBuffer.array())
+                            if (length >0){
+                                Log.i("read byte",packetBuffer.array().toString())
+                                bytesSendToServer[0] = 0
+                                var  bytesIpPacket = packetBuffer.array()
+                                bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
+                                socket.send(DatagramPacket(bytesSendToServer,0,length+1))
+                            }else{
+                                Log.i("read byte"," length is 0")
+                            }
+                            Thread.sleep(1000)
+                            packetBuffer.clear()
+                        }
+                        Log.i("","while over")
+                    }else{
+                        Log.e("","create tun dev failed")
+                    }
+                }
+                jobConnRead = launch{
+                    var bufLen = 1024*10
+                    var buf = ByteArray(bufLen);
+                    var p = DatagramPacket(buf,0,bufLen)
+                    Log.d("","recving connection packet")
+                    socket.receive(p);
+                    Log.d("","recved connection packet ${p}")
+                }
+
+            }catch(e:Exception){
+                Log.i("","onDisconnect from android")
+                YingTunnelService.onConnDisconnect(e.toString());
+                jobTunIfceRead!!.cancel();
+                jobConnRead!!.cancel();
+            }
+            jobTunIfceRead!!.join();
+            jobConnRead!!.join();
+        }
+    }
 
     fun serveInNewThread(tunnelSvc:YingTunnelService){
-         thread {
-             runBlocking{
-                job = launch {
-                    Log.i("","start svc")
-                    try {
-                        // TODO
-                        var tunnel:DatagramChannel = DatagramChannel.open()
-                        var socket = tunnel.socket()
+        Log.i("","serveInNewThread")
+        thread {
+            runBlocking{
+                // tmp(tunnelSvc);
+                coroutineScope {
+                    try{
+                        // var tunnel:DatagramChannel = DatagramChannel.open()
+                        var socket = DatagramSocket()
                         tunnelSvc.protect(socket)
-                        socket.connect(InetSocketAddress("107.155.15.21",10101))
-                        Log.i("","builder")
-                        var builder  = tunnelSvc.Builder()
-                        val localTunnel = builder
-                            .addAddress("10.8.1.20", 24)
-                            .addRoute("0.0.0.0", 0)
-                            .addDnsServer("8.8.8.8")
-                            .establish()
-                        if (localTunnel != null){
-                            // Allocate the buffer for a single packet.
-                            var packetBuffer     = ByteBuffer.allocate(65535)
-                            var bytesSendToServer = ByteArray(65536);
-                            var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
-                            var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
-                            while (isActive){
-                                Log.i("","reading packet")
-                                var length = packetReadFromIfce.read(packetBuffer.array())
-                                if (length >0){
-                                    Log.i("read byte",packetBuffer.array().toString())
-                                    bytesSendToServer[0] = 0
-                                    var  bytesIpPacket = packetBuffer.array()
-                                    bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
-                                    socket.send(DatagramPacket(bytesSendToServer,0,length+1))
+                        var remoteAddr = "107.155.15.21"
+                        Log.i("","connect to address ${remoteAddr}")
+                        socket.connect(InetSocketAddress(remoteAddr,10101))
+                        Log.i("","suc connect address ${remoteAddr}")
+                        jobTunIfceRead = launch (Dispatchers.Default){
+                            try{
+                                Log.i("","start svc")
+                                var builder  = tunnelSvc.Builder()
+                                val localTunnel = builder
+                                    .addAddress("10.8.1.20", 24)
+                                    .addRoute("0.0.0.0", 0)
+                                    .addDnsServer("8.8.8.8")
+                                    .establish()
+                                if (localTunnel != null){
+                                    // Allocate the buffer for a single packet.
+                                    var packetBuffer     = ByteBuffer.allocate(65535)
+                                    var bytesSendToServer = ByteArray(65536);
+                                    var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
+                                    var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
+                                    while (isActive){
+                                        Log.i("","reading packet")
+                                        var length = packetReadFromIfce.read(packetBuffer.array())
+                                        if (length >0){
+                                            Log.i("read byte",packetBuffer.array().toString())
+                                            bytesSendToServer[0] = 0
+                                            var  bytesIpPacket = packetBuffer.array()
+                                            bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
+                                            Log.d("","sending packet to connect")
+                                            try{
+                                                socket.send(DatagramPacket(bytesSendToServer,0,length+1))
+                                            }catch (e:Exception){
+                                                Log.e("",e.toString())
+                                            }
+                                            Log.d("","Sended packet to connect")
+                                        }else{
+                                            Log.i("read byte"," length is 0")
+                                        }
+                                        Thread.sleep(1000)
+                                        packetBuffer.clear()
+                                    }
+                                    Log.i("","while over")
                                 }else{
-                                    Log.i("read byte"," length is 0")
+                                    Log.e("","create tun dev failed")
                                 }
-                                Thread.sleep(1000)
-                                packetBuffer.clear()
+                            }finally {
+                                Log.d("","jobTunIfceRead over");
                             }
-                            Log.i("","while over")
-                        }else{
-                            Log.e("","create tun dev failed")
                         }
-                    }catch(e:SocketException){
-                        Log.e("",e.toString())
-                    }finally {
+                        jobConnRead = launch(Dispatchers.Default){
+                            try{
+                                var bufLen = 1024*10
+                                var buf = ByteArray(bufLen);
+                                var p = DatagramPacket(buf,0,bufLen)
+                                Log.d("","recving connection packet")
+                                socket.receive(p);
+                                Log.d("","recved connection packet ${p}")
+                            }finally {
+                                Log.d("","jobConnRead over")
+                            }
+                        }
+                    }catch(e:Exception){
+                        Log.i("","onDisconnect from android")
+                        YingTunnelService.onConnDisconnect(e.toString());
+                        jobTunIfceRead!!.cancel();
+                        jobConnRead!!.cancel();
                     }
-                };
-                job!!.join();
+                    Log.d("","waiting jobs ")
+                    jobTunIfceRead!!.join();
+                    jobConnRead!!.join();
+                    Log.d("","jobs over ")
+                }
+                Log.d(""," serveInNewThread over")
             }
         }
     }
@@ -165,15 +262,25 @@ class TunnelConn {
 
 class YingTunnelService:VpnService(){
     companion object{
-        var curConnection: TunnelConn? =null;
+        fun onConnDisconnect(errInfo:String){
+            MethodChannel(MainActivity.binaryMsg,"ying").invokeMethod("onConnectFailed",errInfo,object:MethodChannel.Result{
+                override fun success(result: Any?) {
+                    Log.d("Android", "result = $result")
+                }
+                override fun error(errorCode: String?, errorMessage: String?, errorDetails: Any?) {
+                    Log.d("Android", "$errorCode, $errorMessage, $errorDetails")
+                }
+                override fun notImplemented() {
+                    Log.d("Android", "notImplemented")
+                }
+            })
+        }    var curConnection: TunnelConn? =null;
     }
+
+
     override fun onCreate() {
         super.onCreate()
         Log.i("","Tunnel service onCreate")
-    }
-
-    override fun stopService(name: Intent?): Boolean {
-        return super.stopService(name)
     }
 
     fun startConnection(){
@@ -185,6 +292,7 @@ class YingTunnelService:VpnService(){
 
     override fun onDestroy() {
         super.onDestroy()
+        curConnection?.disconnect();
     }
 
 
@@ -193,32 +301,11 @@ class YingTunnelService:VpnService(){
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-            try{
-                MethodChannel(MainActivity.binaryMsg,"ying").invokeMethod("onConnectFailed","",object:MethodChannel.Result{
-                    override fun success(result: Any?) {
-                        Log.d("Android", "result = $result")
-                    }
-                    override fun error(errorCode: String?, errorMessage: String?, errorDetails: Any?) {
-                        Log.d("Android", "$errorCode, $errorMessage, $errorDetails")
-                    }
-                    override fun notImplemented() {
-                        Log.d("Android", "notImplemented")
-                    }
-                })
-                Log.i("","call method channel")
-                // TODO
-                // startConnection();
-            }catch(e:Exception){
-                // MethodChannel(MainActivity.binaryMsg,"onConnectFailed")
-                Log.i("",e.toString());
-            }
-            return VpnService.START_NOT_STICKY
+        try{
+            startConnection();
+        }catch(e:Exception){
+            onConnDisconnect(e.toString())
+        }
+        return VpnService.START_NOT_STICKY
     }
-}
-
-class TunnelRun():Thread(){
-    public override fun run() {
-
-    }
-
 }
