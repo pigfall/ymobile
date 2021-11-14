@@ -55,6 +55,13 @@ class MainActivity: FlutterActivity(){
                         startTunnelService()
                     }
                 }
+                "disconnect"->{
+                    Log.i("","discconect from Android");
+                    stopService(Intent(this,YingTunnelService::class.java))
+                    Log.i("","discconected from Android");
+                    YingTunnelService.curConnection?.disconnect()
+                    result.success("");
+                }
                 else->{
                     Log.e("",String.format("undefined method {}",call.method))
                 }
@@ -95,8 +102,16 @@ class TzzViewMode:ViewModel(){
 class TunnelConn {
     var jobTunIfceRead : Job? =null;
     var jobConnRead: Job? =null;
+    var connSocket:DatagramSocket?=null;
     fun disconnect(){
+        cancel()
+
+    }
+
+
+    fun cancel(){
         Log.i("","disconnect tunnelConn, job canel, thread interrupt")
+        connSocket?.close()
         jobTunIfceRead!!.cancel();
         jobConnRead!!.cancel();
         Log.i("","waiting job stop")
@@ -108,70 +123,6 @@ class TunnelConn {
         Log.i("","diconnected")
     }
 
-    suspend fun tmp(tunnelSvc: YingTunnelService){
-        coroutineScope {
-            try{
-                var tunnel:DatagramChannel = DatagramChannel.open()
-                var socket = tunnel.socket()
-                tunnelSvc.protect(socket)
-                var remoteAddr = "107.155.15.21"
-                Log.i("","connect to address ${remoteAddr}")
-                socket.connect(InetSocketAddress(remoteAddr,10101))
-                Log.i("","suc connect address ${remoteAddr}")
-                jobTunIfceRead = launch {
-                    Log.i("","start svc")
-                    var builder  = tunnelSvc.Builder()
-                    val localTunnel = builder
-                        .addAddress("10.8.1.20", 24)
-                        .addRoute("0.0.0.0", 0)
-                        .addDnsServer("8.8.8.8")
-                        .establish()
-                    if (localTunnel != null){
-                        // Allocate the buffer for a single packet.
-                        var packetBuffer     = ByteBuffer.allocate(65535)
-                        var bytesSendToServer = ByteArray(65536);
-                        var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
-                        var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
-                        while (isActive){
-                            Log.i("","reading packet")
-                            var length = packetReadFromIfce.read(packetBuffer.array())
-                            if (length >0){
-                                Log.i("read byte",packetBuffer.array().toString())
-                                bytesSendToServer[0] = 0
-                                var  bytesIpPacket = packetBuffer.array()
-                                bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
-                                socket.send(DatagramPacket(bytesSendToServer,0,length+1))
-                            }else{
-                                Log.i("read byte"," length is 0")
-                            }
-                            Thread.sleep(1000)
-                            packetBuffer.clear()
-                        }
-                        Log.i("","while over")
-                    }else{
-                        Log.e("","create tun dev failed")
-                    }
-                }
-                jobConnRead = launch{
-                    var bufLen = 1024*10
-                    var buf = ByteArray(bufLen);
-                    var p = DatagramPacket(buf,0,bufLen)
-                    Log.d("","recving connection packet")
-                    socket.receive(p);
-                    Log.d("","recved connection packet ${p}")
-                }
-
-            }catch(e:Exception){
-                Log.i("","onDisconnect from android")
-                YingTunnelService.onConnDisconnect(e.toString());
-                jobTunIfceRead!!.cancel();
-                jobConnRead!!.cancel();
-            }
-            jobTunIfceRead!!.join();
-            jobConnRead!!.join();
-        }
-    }
-
     fun serveInNewThread(tunnelSvc:YingTunnelService){
         Log.i("","serveInNewThread")
         thread {
@@ -181,6 +132,7 @@ class TunnelConn {
                     try{
                         // var tunnel:DatagramChannel = DatagramChannel.open()
                         var socket = DatagramSocket()
+                        connSocket = socket
                         tunnelSvc.protect(socket)
                         var remoteAddr = "107.155.15.21"
                         Log.i("","connect to address ${remoteAddr}")
@@ -196,6 +148,9 @@ class TunnelConn {
                                     .addDnsServer("8.8.8.8")
                                     .establish()
                                 if (localTunnel != null){
+                                    launch (Dispatchers.Main){
+                                        YingTunnelService.onConnected("")
+                                    }
                                     // Allocate the buffer for a single packet.
                                     var packetBuffer     = ByteBuffer.allocate(65535)
                                     var bytesSendToServer = ByteArray(65536);
@@ -224,7 +179,10 @@ class TunnelConn {
                                     }
                                     Log.i("","while over")
                                 }else{
-                                    Log.e("","create tun dev failed")
+                                    var msg = "create tun dev failed"
+                                    Log.e("",msg)
+                                    cancel()
+                                    YingTunnelService.onConnDisconnect(msg);
                                 }
                             }finally {
                                 Log.d("","jobTunIfceRead over");
@@ -238,7 +196,10 @@ class TunnelConn {
                                 Log.d("","recving connection packet")
                                 socket.receive(p);
                                 Log.d("","recved connection packet ${p}")
-                            }finally {
+                            }catch(e:Exception){
+                                Log.e("","jobConnRead Exception : ${e.toString()}")
+                            }
+                            finally {
                                 Log.d("","jobConnRead over")
                             }
                         }
@@ -262,6 +223,28 @@ class TunnelConn {
 
 class YingTunnelService:VpnService(){
     companion object{
+        var instance:YingTunnelService? =null;
+        fun onConnected(errInfo:String) {
+            try{
+                Log.i("","onConnected from Android");
+                MethodChannel(MainActivity.binaryMsg,"ying").invokeMethod("onConnected",errInfo,object:MethodChannel.Result{
+                    override fun success(result: Any?) {
+                        Log.d("Android", "result = $result")
+                    }
+                    override fun error(errorCode: String?, errorMessage: String?, errorDetails: Any?) {
+                        Log.d("Android", "$errorCode, $errorMessage, $errorDetails")
+                    }
+                    override fun notImplemented() {
+                        Log.d("Android", "notImplemented")
+                    }
+                })
+            }catch (e:Exception){
+                Log.i("","${e.toString()}")
+            }finally {
+                Log.i("","onConnected over from Android")
+            }
+        }
+
         fun onConnDisconnect(errInfo:String){
             MethodChannel(MainActivity.binaryMsg,"ying").invokeMethod("onConnectFailed",errInfo,object:MethodChannel.Result{
                 override fun success(result: Any?) {
@@ -280,6 +263,7 @@ class YingTunnelService:VpnService(){
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         Log.i("","Tunnel service onCreate")
     }
 
@@ -292,6 +276,7 @@ class YingTunnelService:VpnService(){
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.i("","Service onDestroy")
         curConnection?.disconnect();
     }
 

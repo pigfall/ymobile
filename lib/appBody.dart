@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:tzz_dart_utils/flutter_widgets/switch_button.dart';
 import 'client_cfg.dart';
 
 class AppBody extends StatefulWidget {
@@ -23,6 +24,7 @@ class _AppBodyState extends State<AppBody> {
   static const platform = MethodChannel("ying");
   bool hasloadedConnCfgs = false;
   bool needMannulTriggerLoad = false;
+  ButtonSwitchState? curButtonState;
   ConnStatus connStatus = ConnStatus.DISCONNECTED;
   late List<ClientCfg> cfgs;
   ClientCfg? curConnCfg;
@@ -47,6 +49,9 @@ class _AppBodyState extends State<AppBody> {
         setState(() {
           this.connStatus = ConnStatus.DISCONNECTED;
         });
+      } else if (call.method == "onConnected") {
+        print("onConnected from flutter");
+        this.changeConnStatus(ConnStatus.CONNECTED, null, this.curButtonState);
       } else {
         print("BUG undefined method ${call.method}");
         throw (Exception("BUG undefined method ${call.method}"));
@@ -60,12 +65,14 @@ class _AppBodyState extends State<AppBody> {
       return this.onUnloadedCfgs();
     } else {
       var children = this.cfgs.map<Widget>((e) {
-        return TextButton(
-            onPressed: () {
+        return Row(
+          children: [
+            Text(e.id),
+            ButtonSwitch((curStatus, buttonState) {
               // mainLogic
               switch (this.connStatus) {
                 case ConnStatus.DISCONNECTED:
-                  this.connectTunnel(e);
+                  this.connectTunnel(e, buttonState);
                   break;
                 case ConnStatus.CONNECING:
                   // TODO Dialog to select　if disconnect the current connection
@@ -79,7 +86,7 @@ class _AppBodyState extends State<AppBody> {
                                 onPressed: () {
                                   // TODO
                                   Navigator.pop(context);
-                                  this.disconnectTunnel();
+                                  this.disconnectTunnel(buttonState);
                                 },
                                 child: Text("Yes")),
                             TextButton(
@@ -94,26 +101,45 @@ class _AppBodyState extends State<AppBody> {
                 case ConnStatus.DISCONNECTING:
                   throw (Exception("BUG unreachable"));
                 case ConnStatus.CONNECTED:
-                  this.disconnectTunnel();
+                  this.disconnectTunnel(buttonState);
                   break;
                 default:
                   throw (Exception(
                       "BUG undefined connStatus ${this.connStatus}"));
               }
-            },
-            child: Text(e.id));
+            })
+          ],
+        );
       });
       var list = children.toList();
-      list.insert(0, Text(this.connStatus.toString()));
+      // list.insert(0, Text(this.connStatus.toString()));
       return ListView(children: list);
     }
   }
 
-  void connectTunnel(ClientCfg cfg) {
-    setState(() {
-      this.connStatus = ConnStatus.CONNECING;
-      this.curConnCfg = cfg;
-    });
+  void changeConnStatus(
+      ConnStatus connStatus, ClientCfg? cfg, ButtonSwitchState? buttonState) {
+    this.connStatus = connStatus;
+    this.curConnCfg = cfg;
+    if (connStatus == ConnStatus.CONNECING ||
+        connStatus == ConnStatus.DISCONNECTING) {
+      this.curButtonState = buttonState;
+      buttonState?.changeButtonState(ButtonSwitchStatus.Switching);
+    } else if (connStatus == ConnStatus.CONNECTED) {
+      this.curButtonState = buttonState;
+      buttonState?.changeButtonState(ButtonSwitchStatus.On);
+    } else {
+      this.curButtonState = null;
+      buttonState?.changeButtonState(ButtonSwitchStatus.Off);
+    }
+  }
+
+  void connectTunnel(ClientCfg cfg, ButtonSwitchState buttonState) {
+    this.changeConnStatus(ConnStatus.CONNECING, cfg, buttonState);
+//    setState(() {
+//      this.connStatus = ConnStatus.CONNECING;
+//      this.curConnCfg = cfg;
+//    });
     platform.invokeMethod("connect").catchError((e) {
       showDialog(
           context: context,
@@ -123,40 +149,34 @@ class _AppBodyState extends State<AppBody> {
               actions: [
                 TextButton(
                     onPressed: () {
-                      setState(() {
-                        this.connStatus = ConnStatus.DISCONNECTED;
-                        this.curConnCfg = null;
-                      });
+                      changeConnStatus(
+                          ConnStatus.DISCONNECTED, null, buttonState);
                       Navigator.pop(context);
                     },
                     child: Text("close"))
               ],
             );
           });
-    }).then((value) {
-      //setState(() {
-      //  this.connStatus = ConnStatus.CONNECTED;
-      //});
-    });
+    }).then((value) {});
   }
 
-  void disconnectTunnel() {
-    setState(() {
-      this.connStatus = ConnStatus.DISCONNECTING;
-      this.curConnCfg = null;
-    });
+  void disconnectTunnel(ButtonSwitchState buttonState) {
+    this.changeConnStatus(ConnStatus.DISCONNECTING, null, buttonState);
     showDialog(
         context: context,
+        barrierDismissible: false,
         builder: (context) {
           return AlertDialog(
             title: Text("Waiting connection to close"),
           );
         });
-    Future.delayed(Duration(seconds: 3), () {
-      setState(() {
-        this.connStatus = ConnStatus.DISCONNECTED;
-      });
-      Navigator.of(context, rootNavigator: true).pop();
+    platform.invokeMethod("disconnect").catchError((e) {
+      print(e.toString());
+    }).then((value) {
+      // TODO
+      print("disconnect success ");
+      this.changeConnStatus(ConnStatus.DISCONNECTED, null, buttonState);
+      Navigator.pop(context);
     });
   }
 
