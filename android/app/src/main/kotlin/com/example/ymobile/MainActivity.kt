@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.net.VpnService
 import android.os.Bundle
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.PersistableBundle
 import android.provider.Settings
 import android.util.Log
@@ -81,6 +82,8 @@ class MainActivity: FlutterActivity(){
                 if (resultCode == RESULT_OK){
                     this.startTunnelService()
                 }else{
+                    // user reject privilege to tunnel
+                    YingTunnelService.onConnDisconnect("User reject privilege to app")
                 }
             }
             else -> {
@@ -103,6 +106,7 @@ class TunnelConn {
     var jobTunIfceRead : Job? =null;
     var jobConnRead: Job? =null;
     var connSocket:DatagramSocket?=null;
+    var tunIfce:ParcelFileDescriptor?=null;
     fun disconnect(){
         cancel()
 
@@ -128,7 +132,7 @@ class TunnelConn {
         thread {
             runBlocking{
                 // tmp(tunnelSvc);
-                coroutineScope {
+                 coroutineScope {
                     try{
                         // var tunnel:DatagramChannel = DatagramChannel.open()
                         var socket = DatagramSocket()
@@ -137,55 +141,76 @@ class TunnelConn {
                         var remoteAddr = "107.155.15.21"
                         Log.i("","connect to address ${remoteAddr}")
                         socket.connect(InetSocketAddress(remoteAddr,10101))
+                        // >
                         Log.i("","suc connect address ${remoteAddr}")
+                        var clientTunnelIpNet:String = ""
                         jobTunIfceRead = launch (Dispatchers.Default){
-                            try{
-                                Log.i("","start svc")
-                                var builder  = tunnelSvc.Builder()
-                                val localTunnel = builder
-                                    .addAddress("10.8.1.20", 24)
-                                    .addRoute("0.0.0.0", 0)
-                                    .addDnsServer("8.8.8.8")
-                                    .establish()
-                                if (localTunnel != null){
-                                    launch (Dispatchers.Main){
-                                        YingTunnelService.onConnected("")
-                                    }
-                                    // Allocate the buffer for a single packet.
-                                    var packetBuffer     = ByteBuffer.allocate(65535)
-                                    var bytesSendToServer = ByteArray(65536);
-                                    var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
-                                    var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
-                                    while (isActive){
-                                        Log.i("","reading packet")
-                                        var length = packetReadFromIfce.read(packetBuffer.array())
-                                        if (length >0){
-                                            Log.i("read byte",packetBuffer.array().toString())
-                                            bytesSendToServer[0] = 0
-                                            var  bytesIpPacket = packetBuffer.array()
-                                            bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
-                                            Log.d("","sending packet to connect")
-                                            try{
-                                                socket.send(DatagramPacket(bytesSendToServer,0,length+1))
-                                            }catch (e:Exception){
-                                                Log.e("",e.toString())
-                                            }
-                                            Log.d("","Sended packet to connect")
-                                        }else{
-                                            Log.i("read byte"," length is 0")
-                                        }
-                                        Thread.sleep(1000)
-                                        packetBuffer.clear()
-                                    }
-                                    Log.i("","while over")
-                                }else{
-                                    var msg = "create tun dev failed"
-                                    Log.e("",msg)
-                                    cancel()
-                                    YingTunnelService.onConnDisconnect(msg);
+                            while(isActive){
+                                delay(1000L)
+                                if (clientTunnelIpNet.length > 0) {
+                                    break
                                 }
-                            }finally {
-                                Log.d("","jobTunIfceRead over");
+                            }
+                            if (isActive){
+                                try{
+                                    Log.i("","start svc")
+                                    var builder  = tunnelSvc.Builder()
+                                    val localTunnel = builder
+                                        .addAddress(clientTunnelIpNet, 24)
+                                        .addRoute("0.0.0.0", 0)
+                                        .addDnsServer("8.8.8.8")
+                                        .establish()
+                                    if (localTunnel != null){
+                                        tunIfce = localTunnel
+                                        launch (Dispatchers.Main){
+                                            YingTunnelService.onConnected("")
+                                        }
+                                        // Allocate the buffer for a single packet.
+                                        var packetBuffer     = ByteBuffer.allocate(65535)
+                                        var bytesSendToServer = ByteArray(65536);
+                                        var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
+                                        var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
+                                        while (isActive){
+                                            Log.i("","reading packet")
+                                            var length = packetReadFromIfce.read(packetBuffer.array())
+                                            if (length >0){
+                                                Log.i("read byte",packetBuffer.array().toString())
+                                                bytesSendToServer[0] = 0
+                                                var  bytesIpPacket = packetBuffer.array()
+                                                bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
+                                                Log.d("","sending packet to connect")
+                                                try{
+                                                    socket.send(DatagramPacket(bytesSendToServer,0,length+1))
+                                                }catch (e:Exception){
+                                                    Log.e("",e.toString())
+                                                }
+                                                Log.d("","Sended packet to connect")
+                                            }else{
+                                                Log.i("read byte"," length is 0")
+                                            }
+                                            packetBuffer.clear()
+                                            Thread.sleep(1000)
+                                        }
+                                        Log.i("","while over")
+                                    }else{
+                                        var msg = "create tun dev failed"
+                                        Log.e("",msg)
+                                        cancel()
+                                        YingTunnelService.onConnDisconnect(msg);
+                                    }
+                                }finally {
+                                    Log.d("","jobTunIfceRead over");
+                                }
+                            }
+
+                        }
+                        launch(Dispatchers.Default){
+                            while(isActive){
+                                queryIp() // TODO
+                                delay(1000L)
+                                if (clientTunnelIpNet.length >0){
+                                    break
+                                }
                             }
                         }
                         jobConnRead = launch(Dispatchers.Default){
@@ -195,6 +220,13 @@ class TunnelConn {
                                 var p = DatagramPacket(buf,0,bufLen)
                                 Log.d("","recving connection packet")
                                 socket.receive(p);
+                                var packetWriteToIfce = FileOutputStream(tunIfce?.fileDescriptor)
+                                if (p.data[0] ==(0).toByte()){
+                                    Log.d("","write to tunifce ${p.data}")
+                                    packetWriteToIfce.write(p.data,1,p.length-1)
+                                }else{
+                                    // TODO handle custom proto
+                                }
                                 Log.d("","recved connection packet ${p}")
                             }catch(e:Exception){
                                 Log.e("","jobConnRead Exception : ${e.toString()}")
@@ -212,6 +244,11 @@ class TunnelConn {
                     Log.d("","waiting jobs ")
                     jobTunIfceRead!!.join();
                     jobConnRead!!.join();
+                    try{
+                        tunIfce?.close()
+                    }catch(e:Exception){
+                        Log.e("",e.toString())
+                    }
                     Log.d("","jobs over ")
                 }
                 Log.d(""," serveInNewThread over")
