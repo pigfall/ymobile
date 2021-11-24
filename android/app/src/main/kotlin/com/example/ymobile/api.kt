@@ -16,7 +16,7 @@ class api(socket:DatagramSocket) {
          sendRequest(ApiId.C2S_QUERY_IP,null)
     }
 
-    fun sendRequest(msgId:ApiId,bodyMsg:Serializable?) {
+    fun sendRequest(msgId:Int,bodyMsg:Serializable?) {
         try{
             Log.i("","sendRequest")
             var bodyBytes:String = ""
@@ -58,9 +58,13 @@ class Res{
 }
 
 @Serializable
-data class ApiReq(val msgId:ApiId,val msgBodyBytes:ByteArray?){
+data class ApiReq(val id:Int,val body:ByteArray?){
 }
 
-enum class ApiId(val num:Int){
-    C2S_QUERY_IP(1),
+
+class ApiId(){
+    companion object{
+        var C2S_QUERY_IP=1
+    }
+
 }

@@ -108,12 +108,12 @@ class TunnelConn {
     var connSocket:DatagramSocket?=null;
     var tunIfce:ParcelFileDescriptor?=null;
     fun disconnect(){
-        cancel()
+        cancel("")
 
     }
 
 
-    fun cancel(){
+    fun cancel(reason:String){
         Log.i("","disconnect tunnelConn, job canel, thread interrupt")
         connSocket?.close()
         jobTunIfceRead!!.cancel();
@@ -124,10 +124,12 @@ class TunnelConn {
             jobConnRead!!.join()
             Log.i("","job stop in runBlocking")
         }
+        YingTunnelService.onConnDisconnect(reason);
         Log.i("","diconnected")
     }
 
     fun serveInNewThread(tunnelSvc:YingTunnelService){
+        var tunConn = this
         Log.i("","serveInNewThread")
         thread {
             runBlocking{
@@ -201,6 +203,7 @@ class TunnelConn {
                                     }
                                 }finally {
                                     Log.d("","jobTunIfceRead over");
+                                    this.cancel()
                                 }
                             }
                         }
@@ -215,25 +218,34 @@ class TunnelConn {
                             }
                         }
                         jobConnRead = launch(Dispatchers.Default){
+                            var e :Exception = Exception("")
                             try{
                                 var bufLen = 1024*10
                                 var buf = ByteArray(bufLen);
                                 var p = DatagramPacket(buf,0,bufLen)
                                 Log.d("","recving connection packet")
-                                socket.receive(p);
-                                var packetWriteToIfce = FileOutputStream(tunIfce?.fileDescriptor)
-                                if (p.data[0] ==(0).toByte()){
-                                    Log.d("","write to tunifce ${p.data}")
-                                    packetWriteToIfce.write(p.data,1,p.length-1)
-                                }else{
-                                    // TODO handle custom proto
+                                while(isActive){
+                                    socket.receive(p);
+                                    Log.d("","rcvd connect packet")
+                                    if (p.data[0] ==(0).toByte() && tunIfce != null){
+                                        Log.d("","write to tunifce ${p.data}")
+                                        var packetWriteToIfce = FileOutputStream(tunIfce?.fileDescriptor)
+                                        packetWriteToIfce.write(p.data,1,p.length-1)
+                                    }else{
+                                        Log.d("","recv app msg")
+                                        // TODO handle custom proto
+                                    }
                                 }
-                                Log.d("","recved connection packet ${p}")
-                            }catch(e:Exception){
-                                Log.e("","jobConnRead Exception : ${e.toString()}")
+                            }catch(ex:Exception){
+                                Log.e("","jobConnRead Exception : ${ex.toString()}")
+                                e=ex
                             }
                             finally {
                                 Log.d("","jobConnRead over")
+                                if (e == null){
+                                    e =Exception("")
+                                }
+                                tunConn.cancel("jobConnRead over ${e.toString()}")
                             }
                         }
                     }catch(e:Exception){
