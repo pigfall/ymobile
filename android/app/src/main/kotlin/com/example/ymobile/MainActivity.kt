@@ -144,6 +144,7 @@ class TunnelConn {
                         // >
                         Log.i("","suc connect address ${remoteAddr}")
                         var clientTunnelIpNet:String = ""
+                        var apiIns = api(socket)
                         jobTunIfceRead = launch (Dispatchers.Default){
                             while(isActive){
                                 delay(1000L)
@@ -202,11 +203,11 @@ class TunnelConn {
                                     Log.d("","jobTunIfceRead over");
                                 }
                             }
-
                         }
                         launch(Dispatchers.Default){
                             while(isActive){
-                                queryIp() // TODO
+                                Log.i("","querying ip")
+                                apiIns.queryIp()
                                 delay(1000L)
                                 if (clientTunnelIpNet.length >0){
                                     break

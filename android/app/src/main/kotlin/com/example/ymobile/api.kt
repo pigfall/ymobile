@@ -1,6 +1,7 @@
 package com.example.ymobile
 
 import kotlinx.serialization.DeserializationStrategy
+import android.util.Log
 import kotlinx.serialization.Serializable
 import java.net.DatagramSocket
 import kotlinx.serialization.json.Json
@@ -11,19 +12,31 @@ import java.net.DatagramPacket
 class api(socket:DatagramSocket) {
     var socket = socket
     fun queryIp() {
+        Log.i("","querying ip")
          sendRequest(ApiId.C2S_QUERY_IP,null)
     }
 
     fun sendRequest(msgId:ApiId,bodyMsg:Serializable?) {
-        var bodyBytes:String = ""
-        if (bodyMsg !=null) {
-            bodyBytes  = Json.encodeToString(bodyMsg)
+        try{
+            Log.i("","sendRequest")
+            var bodyBytes:String = ""
+            if (bodyMsg !=null) {
+                bodyBytes  = Json.encodeToString(bodyMsg)
+            }
+            var req = ApiReq(msgId,bodyBytes?.toByteArray())
+            Log.d("","json encoding")
+            var msgBytes  = Json.encodeToString(req)
+            Log.d("","json encoded")
+            Log.d("",msgBytes.toString())
+            var bytes = ByteArray(msgBytes.length+1)
+            bytes[0] = 1
+            bytes = msgBytes.toByteArray().copyInto(bytes,1,0,msgBytes.length)
+            Log.i("","sending app req msg")
+            socket.send(DatagramPacket(bytes,msgBytes.length+1))
+            Log.i("","sent app req msg")
+        }catch (e:Exception){
+            Log.e("",e.toString())
         }
-        var req = ApiReq(msgId,bodyBytes?.toByteArray())
-        var msgBytes  = Json.encodeToString(req)
-        var bytes = ByteArray(msgBytes.length+1)
-        bytes = msgBytes.toByteArray().copyInto(bytes,1,0,msgBytes.length)
-        socket.send(DatagramPacket(bytes,msgBytes.length+1))
     }
 
     fun <T>decodeRes(resMsg: DeserializationStrategy<Res>, resMsgBytes:ByteArray) :Res {
@@ -45,12 +58,9 @@ class Res{
 }
 
 @Serializable
-class ApiReq(msgId:ApiId,msgBodyBytes:ByteArray?){
-    var msgId =msgId
-    var msgBodyBytes=msgBodyBytes
+data class ApiReq(val msgId:ApiId,val msgBodyBytes:ByteArray?){
 }
 
-enum class ApiId{
-    C2S_QUERY_IP,
-
+enum class ApiId(val num:Int){
+    C2S_QUERY_IP(1),
 }
