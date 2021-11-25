@@ -31,24 +31,28 @@ class _AppBodyState extends State<AppBody> {
   _AppBodyState() {
     platform.setMethodCallHandler((call) {
       if (call.method == "onConnectFailed") {
-        showDialog(
-            context: context,
-            builder: (context) {
-              return AlertDialog(
-                title: Text("Connected Failed"),
-                content: Text("${call}"),
-                actions: [
-                  TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      child: Text("close"))
-                ],
-              );
-            });
-        setState(() {
-          this.connStatus = ConnStatus.DISCONNECTED;
-        });
+        if (this.connStatus == ConnStatus.CONNECING ||
+            this.connStatus == ConnStatus.CONNECTED) {
+          print(this.connStatus);
+          showDialog(
+              context: context,
+              builder: (context) {
+                return AlertDialog(
+                  title: Text("Connected Failed"),
+                  content: Text("${call}"),
+                  actions: [
+                    TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        child: Text("close"))
+                  ],
+                );
+              });
+          setState(() {
+            this.connStatus = ConnStatus.DISCONNECTED;
+          });
+        }
       } else if (call.method == "onConnected") {
         print("onConnected from flutter");
         this.changeConnStatus(ConnStatus.CONNECTED, null, this.curButtonState);

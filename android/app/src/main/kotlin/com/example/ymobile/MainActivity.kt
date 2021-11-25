@@ -3,10 +3,7 @@ package com.example.ymobile
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.VpnService
-import android.os.Bundle
-import android.os.IBinder
-import android.os.ParcelFileDescriptor
-import android.os.PersistableBundle
+import android.os.*
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
@@ -28,6 +25,10 @@ import java.nio.channels.DatagramChannel
 import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
+import android.os.Looper
+
+
+
 
 class MainActivity: FlutterActivity(){
     companion object {
@@ -110,6 +111,7 @@ class TunnelSvc(vpnSvc:YingTunnelService){
     }
 
     fun onSvcOver(){
+        Log.i(""," onSvcOver")
         YingTunnelService.onConnDisconnect("")
     }
 
@@ -121,6 +123,7 @@ class TunnelSvc(vpnSvc:YingTunnelService){
     fun connect() {
         var socket = DatagramSocket()
         this.socket = socket
+        val mainHandler = Handler(Looper.getMainLooper())
         this.th = thread {
             var ins = this
             runBlocking {
@@ -243,213 +246,27 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                             jobTunRead.join()
                             Log.i("","jobs over")
                     }catch (e:Exception){
-                            try{
+                            Log.e("","mainBlock exception ${e.toString()}")
+                        }finally {
+                            Log.e("","mainBlock quit")
+                        try{
                                 socket.close()
                             }catch (e:Exception){
 
                             }
-                            Log.e("","mainBlock quit ${e.toString()}")
-                        }
+                    }
+                }
+                mainHandler.post {
+                    onSvcOver()
                 }
             }
         }
     }
 
-    suspend fun connRead(socket:DatagramSocket){
-        try{
-
-        }catch(e:Exception){
-
-        }
-
-    }
-    suspend fun tunRead(socket:DatagramSocket){
-
-    }
 
 
-
-    fun onQuit(){
-        Log.i("TunnSvc","onQuit")
-        // TODO
-    }
 }
 
-class TunnelConn {
-    var jobTunIfceRead : Job? =null;
-    var jobConnRead: Job? =null;
-    var connSocket:DatagramSocket?=null;
-    var tunIfce:ParcelFileDescriptor?=null;
-    fun disconnect(){
-        cancel("")
-
-    }
-
-
-    fun onCancel(reason:String){
-        YingTunnelService.onConnDisconnect(reason);
-        Log.i("","diconnected")
-    }
-
-    fun cancelOnly(reason:String){
-        Log.i("","disconnect tunnelConn, job canel, thread interrupt")
-        connSocket?.close()
-        jobTunIfceRead!!.cancel();
-        jobConnRead!!.cancel();
-        Log.i("","waiting job stop")
-    }
-    fun cancel(reason:String){
-        Log.i("","disconnect tunnelConn, job canel, thread interrupt")
-        connSocket?.close()
-        jobTunIfceRead!!.cancel();
-        jobConnRead!!.cancel();
-        Log.i("","waiting job stop")
-        runBlocking {
-            jobTunIfceRead!!.join()
-            jobConnRead!!.join()
-            Log.i("","job stop in runBlocking")
-        }
-        YingTunnelService.onConnDisconnect(reason);
-        Log.i("","diconnected")
-    }
-
-    fun serveInNewThread(tunnelSvc:YingTunnelService){
-        var tunConn = this
-        Log.i("","serveInNewThread")
-         thread {
-            runBlocking {
-                // tmp(tunnelSvc);
-                 coroutineScope {
-                    try{
-                        // var tunnel:DatagramChannel = DatagramChannel.open()
-                        var socket = DatagramSocket()
-                        connSocket = socket
-                        tunnelSvc.protect(socket)
-                        var remoteAddr = "107.155.15.21"
-                        Log.i("","connect to address ${remoteAddr}")
-                        socket.connect(InetSocketAddress(remoteAddr,10101))
-                        // >
-                        Log.i("","suc connect address ${remoteAddr}")
-                        var clientTunnelIpNet:String = ""
-                        var apiIns = api(socket)
-                        jobTunIfceRead = launch (Dispatchers.Default){
-                            while(isActive){
-                                delay(1000L)
-                                if (clientTunnelIpNet.length > 0) {
-                                    break
-                                }
-                            }
-                            if (isActive){
-                                try{
-                                    Log.i("","start svc")
-                                    var builder  = tunnelSvc.Builder()
-                                    val localTunnel = builder
-                                        .addAddress(clientTunnelIpNet, 24)
-                                        .addRoute("0.0.0.0", 0)
-                                        .addDnsServer("8.8.8.8")
-                                        .establish()
-                                    if (localTunnel != null){
-                                        tunIfce = localTunnel
-                                        launch (Dispatchers.Main){
-                                            YingTunnelService.onConnected("")
-                                        }
-                                        // Allocate the buffer for a single packet.
-                                        var packetBuffer     = ByteBuffer.allocate(65535)
-                                        var bytesSendToServer = ByteArray(65536);
-                                        var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
-                                        var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
-                                        while (isActive){
-                                            Log.i("","reading packet")
-                                            var length = packetReadFromIfce.read(packetBuffer.array())
-                                            if (length >0){
-                                                Log.i("read byte",packetBuffer.array().toString())
-                                                bytesSendToServer[0] = 0
-                                                var  bytesIpPacket = packetBuffer.array()
-                                                bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
-                                                Log.d("","sending packet to connect")
-                                                socket.send(DatagramPacket(bytesSendToServer,0,length+1))
-                                                Log.d("","Sended packet to connect")
-                                            }else{
-                                                Log.i("read byte"," length is 0")
-                                            }
-                                            packetBuffer.clear()
-                                            Thread.sleep(1000)
-                                        }
-                                        Log.i("","while over")
-                                    }else{
-                                        var msg = "create tun dev failed"
-                                        Log.e("",msg)
-                                        cancel()
-                                    }
-                                }finally {
-                                    Log.d("","jobTunIfceRead over");
-                                    tunConn.cancelOnly("");
-                                }
-                            }
-                        }
-                        launch(Dispatchers.Default){
-                            while(isActive){
-                                Log.i("","querying ip")
-                                apiIns.queryIp()
-                                delay(1000L)
-                                if (clientTunnelIpNet.length >0){
-                                    break
-                                }
-                            }
-                        }
-                        jobConnRead = launch(Dispatchers.Default){
-                            var e :Exception = Exception("")
-                            try{
-                                var bufLen = 1024*10
-                                var buf = ByteArray(bufLen);
-                                var p = DatagramPacket(buf,0,bufLen)
-                                Log.d("","recving connection packet")
-                                while(isActive){
-                                    socket.receive(p);
-                                    Log.d("","rcvd connect packet")
-                                    if (p.data[0] ==(0).toByte() && tunIfce != null){
-                                        Log.d("","write to tunifce ${p.data}")
-                                        var packetWriteToIfce = FileOutputStream(tunIfce?.fileDescriptor)
-                                        packetWriteToIfce.write(p.data,1,p.length-1)
-                                    }else{
-                                        Log.d("","recv app msg ${p.data.sliceArray(1..(p.length-1)).decodeToString()}")
-
-                                        // TODO handle custom proto
-                                    }
-                                }
-                            }catch(ex:Exception){
-                                Log.e("","jobConnRead Exception : ${ex.toString()}")
-                                e=ex
-                            }
-                            finally {
-                                Log.d("","jobConnRead over")
-                                if (e == null){
-                                    e =Exception("")
-                                }
-                            }
-                        }
-                    }catch(e:Exception){
-                        Log.i("","onDisconnect from android")
-                        YingTunnelService.onConnDisconnect(e.toString());
-                        jobTunIfceRead!!.cancel();
-                        jobConnRead!!.cancel();
-                    }
-                    Log.d("","waiting jobs ")
-                    jobTunIfceRead!!.join();
-                    jobConnRead!!.join();
-                    try{
-                        tunIfce?.close()
-                    }catch(e:Exception){
-                        Log.e("",e.toString())
-                    }
-                    Log.d("","jobs over ")
-                }
-            }
-             Log.d(""," serveInNewThread over")
-             tunConn.onCancel("")
-         }
-    }
-}
 
 
 class YingTunnelService:VpnService(){
