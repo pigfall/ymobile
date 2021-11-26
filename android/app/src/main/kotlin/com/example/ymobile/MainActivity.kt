@@ -16,6 +16,9 @@ import kotlinx.coroutines.*
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.Exception
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
 import java.net.*
@@ -26,8 +29,7 @@ import kotlin.concurrent.thread
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 import android.os.Looper
-
-
+import kotlinx.serialization.DeserializationStrategy
 
 
 class MainActivity: FlutterActivity(){
@@ -132,11 +134,11 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                             var clientTunnelIpNet = ""
                             // < readySocket
                             vpnSvc.protect(socket)
-                            var remoteAddr = "107.155.15.21"
-                            Log.i("","connect to address ${remoteAddr}")
-                            socket?.connect(InetSocketAddress(remoteAddr,10101))
+                            var remoteIp = "107.155.15.21"
+                            var remoteAddr = InetSocketAddress(remoteIp,10101)
+                            // socket?.connect(remoteAddr)
                             // >
-                            var apiIns = api(socket)
+                            var apiIns = api(socket,remoteAddr)
                             launch(Dispatchers.Default){
                                 while(!isOver){
                                     Log.i("","querying ip")
@@ -147,7 +149,7 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                     }
                                 }
                             }
-                            var jobConRead = launch {
+                            var jobConRead = launch (Dispatchers.Default){
                                 try{
                                     var e :Exception = Exception("")
                                     try{
@@ -156,6 +158,7 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                         var p = DatagramPacket(buf,0,bufLen)
                                         Log.d("","recving connection packet")
                                         while(!isOver){
+                                            Log.d("","recving connection packet")
                                             socket.receive(p);
                                             Log.d("","rcvd connect packet")
                                             if (p.data[0] ==(0).toByte() && tunIfce != null){
@@ -163,7 +166,17 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                                 var packetWriteToIfce = FileOutputStream(tunIfce?.fileDescriptor)
                                                 packetWriteToIfce.write(p.data,1,p.length-1)
                                             }else{
+                                                var resBytes = p.data.sliceArray(1..(p.length-1))
                                                 Log.d("","recv app msg ${p.data.sliceArray(1..(p.length-1)).decodeToString()}")
+                                                var msg = apiIns.decodeRes(resBytes.decodeToString())
+                                                when(msg.id){
+                                                    (ApiId.S2C_QUERY_IP)->{
+                                                        Log.i("","get clientTunnel ip ")
+                                                        var clientTunnelIp = Json.decodeFromString<resQueryIp>(msg.body)
+                                                        Log.i("","get clientTunnel ip $clientTunnelIp")
+                                                        clientTunnelIpNet = clientTunnelIp.ip_net
+                                                    }
+                                                }
 
                                                 // TODO handle custom proto
                                             }
@@ -182,20 +195,27 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                     cancelSvc()
                                 }
                             }
-                            var jobTunRead = launch {
+                            var jobTunRead = launch (Dispatchers.Default){
                                 try{
+                                    Log.d("","wating clientTunnel ip")
                                     while(!isOver){
-                                        delay(1000L)
+                                        delay(1000)
+                                        Log.d("","dealy over")
                                         if (clientTunnelIpNet.length > 0) {
+                                            Log.i("","get clientTunnelIpNet")
                                             break
                                         }
                                     }
                                     if (!isOver){
+                                        mainHandler.post {
+                                            YingTunnelService.onConnected("")
+                                        }
                                         try{
-                                            Log.i("","start svc")
+                                            Log.i("","start create tun interface")
                                             var builder  =vpnSvc.Builder()
+
                                             val localTunnel = builder
-                                                .addAddress(clientTunnelIpNet, 24)
+                                                .addAddress(clientTunnelIpNet.slice(0..(clientTunnelIpNet.indexOfFirst {c ->  c=='/'}-1)), 24)
                                                 .addRoute("0.0.0.0", 0)
                                                 .addDnsServer("8.8.8.8")
                                                 .establish()
@@ -215,13 +235,13 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                                         var  bytesIpPacket = packetBuffer.array()
                                                         bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
                                                         Log.d("","sending packet to connect")
-                                                        socket.send(DatagramPacket(bytesSendToServer,0,length+1))
+                                                        socket.send(DatagramPacket(bytesSendToServer,0,length+1,remoteAddr))
                                                         Log.d("","Sended packet to connect")
                                                     }else{
                                                         Log.i("read byte"," length is 0")
                                                     }
                                                     packetBuffer.clear()
-                                                    Thread.sleep(1000)
+                                                    // Thread.sleep(1000)
                                                 }
                                                 Log.i("","while over")
                                             }else{
