@@ -132,21 +132,6 @@ class TunnelSvc(vpnSvc:YingTunnelService){
             var ins = this
             runBlocking {
                 coroutineScope {
-                    var debugTODO = launch{
-                        try{
-                            ins.socket = socket
-                            vpnSvc.protect(socket)
-                            while (!isOver){
-                                var btArray = ByteArray(10)
-                                btArray[0] = 0
-                                Log.d("","send packet")
-                                delay(1000)
-                                socket.send(DatagramPacket(btArray,10,remoteAddr))
-                            }
-                        }catch (e:Exception){
-
-                        }
-                    }
                     try{
                         Log.d("","tmp")
                         ins.socket = socket
