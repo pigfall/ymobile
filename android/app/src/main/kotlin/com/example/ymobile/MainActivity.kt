@@ -30,6 +30,10 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 import android.os.Looper
 import kotlinx.serialization.DeserializationStrategy
+import java.sql.Time
+import java.time.Duration
+import java.time.LocalDateTime
+import java.time.Period
 
 
 class MainActivity: FlutterActivity(){
@@ -107,6 +111,7 @@ class TunnelSvc(vpnSvc:YingTunnelService){
     var vpnSvc = vpnSvc
     var socket :DatagramSocket? = null
     var isOver:Boolean = false
+    var jobHeartbeat:Job? = null
     fun disconnect(){
         this.cancelSvc()
         this.th?.join()
@@ -121,21 +126,25 @@ class TunnelSvc(vpnSvc:YingTunnelService){
         this.isOver = true
         this.socket?.close()
         this.tunIfce?.close()
+        this.jobHeartbeat?.cancel()
     }
     fun connect() {
+        var ins = this
         var socket = DatagramSocket()
         this.socket = socket
         val mainHandler = Handler(Looper.getMainLooper())
+        var heartbeat =LocalDateTime.now()
         this.th = thread {
             var ins = this
             runBlocking {
                 coroutineScope {
+
                     try{
                             var clientTunnelIpNet = ""
                             // < readySocket
                             vpnSvc.protect(socket)
                             var remoteIp = "107.155.15.21"
-                            var remoteAddr = InetSocketAddress(remoteIp,10101)
+                            var remoteAddr = InetSocketAddress(remoteIp,10102)
                             // socket?.connect(remoteAddr)
                             // >
                             var apiIns = api(socket,remoteAddr)
@@ -149,6 +158,20 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                     }
                                 }
                             }
+                            ins.jobHeartbeat = launch (Dispatchers.Default) {
+                                while (!isOver) {
+                                    var now = LocalDateTime.now()
+                                    var period = Duration.between(now, heartbeat)
+                                    if (!period.abs().minus(Duration.ofSeconds(20)).isNegative) {
+                                        Log.i("","heartbeat timeout")
+                                        cancelSvc()
+                                        break
+                                    }
+                                    delay(6000)
+                                    apiIns.sendHeartbeat()
+                                }
+                            }
+
                             var jobConRead = launch (Dispatchers.Default){
                                 try{
                                     var e :Exception = Exception("")
@@ -175,6 +198,10 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                                         var clientTunnelIp = Json.decodeFromString<resQueryIp>(msg.body)
                                                         Log.i("","get clientTunnel ip $clientTunnelIp")
                                                         clientTunnelIpNet = clientTunnelIp.ip_net
+                                                    }
+                                                    (ApiId.S2C_HEARTBEAT)->{
+                                                        Log.i("","get hearbeat response")
+                                                        heartbeat = LocalDateTime.now()
                                                     }
                                                 }
 

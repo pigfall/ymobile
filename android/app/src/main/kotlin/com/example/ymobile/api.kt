@@ -22,6 +22,10 @@ class api(socket:DatagramSocket,remoteAddr:InetSocketAddress) {
         Log.i("","querying ip")
         sendRequest(ApiId.C2S_QUERY_IP,null)
     }
+    fun sendHeartbeat() {
+        Log.d("", "sendHeartbeat")
+        sendRequest(ApiId.C2S_HEARTBEAT, null)
+    }
 
     fun sendRequest(msgId:Int,bodyMsg:Serializable?) {
         try{
@@ -76,6 +80,7 @@ class ApiId(){
     companion object{
         var C2S_QUERY_IP=1
         var S2C_QUERY_IP=2
+        var C2S_HEARTBEAT =3
+        var S2C_HEARTBEAT =4
     }
-
 }
