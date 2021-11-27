@@ -6,7 +6,7 @@ class ClientCfg {
   static Future<List<ClientCfg>> LoadFromDisk() {
     // TODO
     var list = [
-      ClientCfg("testId"),
+      ClientCfg("tzz toky node"),
     ];
     return Future.value(
       list,

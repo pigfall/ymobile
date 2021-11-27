@@ -72,46 +72,50 @@ class _AppBodyState extends State<AppBody> {
         return Row(
           children: [
             Text(e.id),
-            ButtonSwitch((curStatus, buttonState) {
-              // mainLogic
-              switch (this.connStatus) {
-                case ConnStatus.DISCONNECTED:
-                  this.connectTunnel(e, buttonState);
-                  break;
-                case ConnStatus.CONNECING:
-                  // TODO Dialog to select　if disconnect the current connection
-                  showDialog(
-                      context: context,
-                      builder: (context) {
-                        return AlertDialog(
-                          title: Text("Disconnect connection?"),
-                          actions: [
-                            TextButton(
-                                onPressed: () {
-                                  // TODO
-                                  Navigator.pop(context);
-                                  this.disconnectTunnel(buttonState);
-                                },
-                                child: Text("Yes")),
-                            TextButton(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                },
-                                child: Text("No")),
-                          ],
-                        );
-                      });
-                  break;
-                case ConnStatus.DISCONNECTING:
-                  throw (Exception("BUG unreachable"));
-                case ConnStatus.CONNECTED:
-                  this.disconnectTunnel(buttonState);
-                  break;
-                default:
-                  throw (Exception(
-                      "BUG undefined connStatus ${this.connStatus}"));
-              }
-            })
+            ButtonSwitch(
+                onPress: (curStatus, buttonState) {
+                  // mainLogic
+                  switch (this.connStatus) {
+                    case ConnStatus.DISCONNECTED:
+                      this.connectTunnel(e, buttonState);
+                      break;
+                    case ConnStatus.CONNECING:
+                      // TODO Dialog to select　if disconnect the current connection
+                      showDialog(
+                          context: context,
+                          builder: (context) {
+                            return AlertDialog(
+                              title: Text("Disconnect connection?"),
+                              actions: [
+                                TextButton(
+                                    onPressed: () {
+                                      // TODO
+                                      Navigator.pop(context);
+                                      this.disconnectTunnel(buttonState);
+                                    },
+                                    child: Text("Yes")),
+                                TextButton(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                    },
+                                    child: Text("No")),
+                              ],
+                            );
+                          });
+                      break;
+                    case ConnStatus.DISCONNECTING:
+                      throw (Exception("BUG unreachable"));
+                    case ConnStatus.CONNECTED:
+                      this.disconnectTunnel(buttonState);
+                      break;
+                    default:
+                      throw (Exception(
+                          "BUG undefined connStatus ${this.connStatus}"));
+                  }
+                },
+                offDesc: "Disconnected",
+                switchingDesc: "Switching",
+                onDesc: "Connected")
           ],
         );
       });

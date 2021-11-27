@@ -217,7 +217,7 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                             val localTunnel = builder
                                                 .addAddress(clientTunnelIpNet.slice(0..(clientTunnelIpNet.indexOfFirst {c ->  c=='/'}-1)), 24)
                                                 .addRoute("0.0.0.0", 0)
-                                                .addDnsServer("8.8.8.8")
+                                                .addDnsServer("8.8.8.8").setBlocking(true)
                                                 .establish()
                                             if (localTunnel != null){
                                                 tunIfce = localTunnel

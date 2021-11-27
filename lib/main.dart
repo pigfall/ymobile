@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:tzz_dart_utils/flutter_widgets/switch_button.dart'
     show ButtonSwitch;
 
+const TITLE = "Smile";
 void main() {
   runApp(const MyApp());
 }
@@ -18,7 +19,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: TITLE,
       theme: ThemeData(
         // This is the theme of your application.
         //
@@ -29,9 +30,9 @@ class MyApp extends StatelessWidget {
         // or simply save your changes to "hot reload" in a Flutter IDE).
         // Notice that the counter didn't reset back to zero; the application
         // is not restarted.
-        primarySwatch: Colors.blue,
+        primarySwatch: Palette.kToDark,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: TITLE),
     );
   }
 }
@@ -117,3 +118,21 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 }
+
+class Palette {
+  static const MaterialColor kToDark = const MaterialColor(
+    0xff343f26, // 0% comes in here, this will be color picked if no shade is selected when defining a Color property which doesn’t require a swatch.
+    const <int, Color>{
+      50: const Color(0xff343f26), //10%
+      100: const Color(0xff4a553e), //20%
+      200: const Color(0xff616a56), //30%
+      300: const Color(0xff777f6e), //40%
+      400: const Color(0xff8e9587), //50%
+      500: const Color(0xffa5aa9f), //60%
+      600: const Color(0xffbbbfb7), //70%
+      700: const Color(0xffd2d4cf), //80%
+      800: const Color(0xff170907), //90%
+      900: const Color(0xff000000), //100%
+    },
+  );
+} // you can
