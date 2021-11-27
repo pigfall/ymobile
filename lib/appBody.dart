@@ -204,6 +204,7 @@ class _AppBodyState extends State<AppBody> {
       //  });
       //});
       ClientCfg.LoadFromDisk().catchError((error, stackTrace) {
+        print(error);
         this.needMannulTriggerLoad = true;
       }).then((cfgs) {
         this.cfgs = cfgs;
@@ -216,17 +217,18 @@ class _AppBodyState extends State<AppBody> {
   }
 }
 
-class AppBodyLoadingCfgs extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Text("loading");
-  }
-}
-
-class AppBodyLoadedCfgs extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    // TODO: implement build
-    throw UnimplementedError();
-  }
-}
+//class AppBodyLoadingCfgs extends StatelessWidget {
+//  @override
+//  Widget build(BuildContext context) {
+//    return Text("loading");
+//  }
+//}
+//
+//class AppBodyLoadedCfgs extends StatelessWidget {
+//  @override
+//  Widget build(BuildContext context) {
+//    // TODO: implement build
+//    throw UnimplementedError();
+//  }
+//}
+//
