@@ -1,39 +1,28 @@
 package com.example.ymobile
 
 import android.content.Intent
-import android.content.res.Configuration
 import android.net.VpnService
 import android.os.*
-import android.provider.ContactsContract
-import android.provider.Settings
 import android.util.Log
-import androidx.lifecycle.ViewModel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.lang.Exception
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
-import java.lang.reflect.Executable
-import java.lang.reflect.Method
-import java.net.*
-import java.nio.Buffer
+import kotlinx.serialization.*
 import java.nio.ByteBuffer
-import java.nio.channels.DatagramChannel
 import kotlin.concurrent.thread
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.coroutineContext
 import android.os.Looper
-import kotlinx.serialization.DeserializationStrategy
-import java.sql.Time
 import java.time.Duration
 import java.time.LocalDateTime
-import java.time.Period
 
 
 class MainActivity: FlutterActivity(){
@@ -79,7 +68,7 @@ class MainActivity: FlutterActivity(){
         }
     }
     private fun startTunnelService(){
-        Log.i("","starting tunnel service")
+        Log.i(" startTunnelService","starting tunnel service")
         (Intent(this,YingTunnelService::class.java)).also {intent -> startService(intent) }
     }
 
@@ -112,6 +101,12 @@ class TunnelSvc(vpnSvc:YingTunnelService){
     var socket :DatagramSocket? = null
     var isOver:Boolean = false
     var jobHeartbeat:Job? = null
+    var errReason :String=""
+    fun setFirstReason(errReason:String){
+        if (this.errReason.length == 0){
+            this.errReason = errReason
+        }
+    }
     fun disconnect(){
         this.cancelSvc()
         this.th?.join()
@@ -119,7 +114,7 @@ class TunnelSvc(vpnSvc:YingTunnelService){
 
     fun onSvcOver(){
         Log.i(""," onSvcOver")
-        YingTunnelService.onConnDisconnect("")
+        YingTunnelService.onConnDisconnect(errReason.toString())
     }
 
     fun cancelSvc(){
@@ -130,35 +125,56 @@ class TunnelSvc(vpnSvc:YingTunnelService){
     }
     fun connect() {
         var ins = this
-        var socket = DatagramSocket()
-        this.socket = socket
         val mainHandler = Handler(Looper.getMainLooper())
-        var heartbeat =LocalDateTime.now()
+        var remoteAddr = InetSocketAddress("107.155.15.21",10102)
+        var socket = DatagramSocket()
         this.th = thread {
             var ins = this
             runBlocking {
                 coroutineScope {
-
-                    try{
-                            var clientTunnelIpNet = ""
-                            // < readySocket
+                    var debugTODO = launch{
+                        try{
+                            ins.socket = socket
                             vpnSvc.protect(socket)
-                            var remoteIp = "107.155.15.21"
-                            var remoteAddr = InetSocketAddress(remoteIp,10102)
-                            // socket?.connect(remoteAddr)
-                            // >
-                            var apiIns = api(socket,remoteAddr)
-                            launch(Dispatchers.Default){
-                                while(!isOver){
-                                    Log.i("","querying ip")
+                            while (!isOver){
+                                var btArray = ByteArray(10)
+                                btArray[0] = 0
+                                Log.d("","send packet")
+                                delay(1000)
+                                socket.send(DatagramPacket(btArray,10,remoteAddr))
+                            }
+                        }catch (e:Exception){
+
+                        }
+                    }
+                    try{
+                        Log.d("","tmp")
+                        ins.socket = socket
+                        var heartbeat =LocalDateTime.now()
+                        var clientTunnelIpNet = ""
+                        // < readySocket
+                        vpnSvc.protect(socket)
+                        // socket?.connect(remoteAddr)
+                        // >
+                        var apiIns = api(socket,remoteAddr)
+                        launch(Dispatchers.Default){
+                            while(!isOver){
+                                Log.i("","querying ip")
+                                try{
                                     apiIns.queryIp()
                                     delay(1000L)
                                     if (clientTunnelIpNet.length >0){
                                         break
                                     }
+                                }catch (e:Exception){
+                                    setFirstReason(e.toString())
+                                    Log.e("",e.toString())
+                                    cancelSvc()
                                 }
                             }
-                            ins.jobHeartbeat = launch (Dispatchers.Default) {
+                        }
+                        ins.jobHeartbeat = launch (Dispatchers.Default) {
+                            try{
                                 while (!isOver) {
                                     var now = LocalDateTime.now()
                                     var period = Duration.between(now, heartbeat)
@@ -170,137 +186,132 @@ class TunnelSvc(vpnSvc:YingTunnelService){
                                     delay(6000)
                                     apiIns.sendHeartbeat()
                                 }
-                            }
-
-                            var jobConRead = launch (Dispatchers.Default){
-                                try{
-                                    var e :Exception = Exception("")
-                                    try{
-                                        var bufLen = 1024*10
-                                        var buf = ByteArray(bufLen);
-                                        var p = DatagramPacket(buf,0,bufLen)
-                                        Log.d("","recving connection packet")
-                                        while(!isOver){
-                                            Log.d("","recving connection packet")
-                                            socket.receive(p);
-                                            Log.d("","rcvd connect packet")
-                                            if (p.data[0] ==(0).toByte() && tunIfce != null){
-                                                Log.d("","write to tunifce ${p.data}")
-                                                var packetWriteToIfce = FileOutputStream(tunIfce?.fileDescriptor)
-                                                packetWriteToIfce.write(p.data,1,p.length-1)
-                                            }else{
-                                                var resBytes = p.data.sliceArray(1..(p.length-1))
-                                                Log.d("","recv app msg ${p.data.sliceArray(1..(p.length-1)).decodeToString()}")
-                                                var msg = apiIns.decodeRes(resBytes.decodeToString())
-                                                when(msg.id){
-                                                    (ApiId.S2C_QUERY_IP)->{
-                                                        Log.i("","get clientTunnel ip ")
-                                                        var clientTunnelIp = Json.decodeFromString<resQueryIp>(msg.body)
-                                                        Log.i("","get clientTunnel ip $clientTunnelIp")
-                                                        clientTunnelIpNet = clientTunnelIp.ip_net
-                                                    }
-                                                    (ApiId.S2C_HEARTBEAT)->{
-                                                        Log.i("","get hearbeat response")
-                                                        heartbeat = LocalDateTime.now()
-                                                    }
-                                                }
-
-                                                // TODO handle custom proto
-                                            }
-                                        }
-                                    }catch(ex:Exception){
-                                        Log.e("","jobConnRead Exception : ${ex.toString()}")
-                                        e=ex
-                                    }
-                                    finally {
-                                        Log.d("","jobConnRead over")
-                                        if (e == null){
-                                            e =Exception("")
-                                        }
-                                    }
-                                }finally {
-                                    cancelSvc()
-                                }
-                            }
-                            var jobTunRead = launch (Dispatchers.Default){
-                                try{
-                                    Log.d("","wating clientTunnel ip")
-                                    while(!isOver){
-                                        delay(1000)
-                                        Log.d("","dealy over")
-                                        if (clientTunnelIpNet.length > 0) {
-                                            Log.i("","get clientTunnelIpNet")
-                                            break
-                                        }
-                                    }
-                                    if (!isOver){
-                                        mainHandler.post {
-                                            YingTunnelService.onConnected("")
-                                        }
-                                        try{
-                                            Log.i("","start create tun interface")
-                                            var builder  =vpnSvc.Builder()
-
-                                            val localTunnel = builder
-                                                .addAddress(clientTunnelIpNet.slice(0..(clientTunnelIpNet.indexOfFirst {c ->  c=='/'}-1)), 24)
-                                                .addRoute("0.0.0.0", 0)
-                                                .addDnsServer("8.8.8.8").setBlocking(true)
-                                                .establish()
-                                            if (localTunnel != null){
-                                                tunIfce = localTunnel
-                                                // Allocate the buffer for a single packet.
-                                                var packetBuffer     = ByteBuffer.allocate(65535)
-                                                var bytesSendToServer = ByteArray(65536);
-                                                var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
-                                                var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
-                                                while (isActive){
-                                                    Log.i("","reading packet")
-                                                    var length = packetReadFromIfce.read(packetBuffer.array())
-                                                    if (length >0){
-                                                        Log.i("read byte",packetBuffer.array().toString())
-                                                        bytesSendToServer[0] = 0
-                                                        var  bytesIpPacket = packetBuffer.array()
-                                                        bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
-                                                        Log.d("","sending packet to connect")
-                                                        socket.send(DatagramPacket(bytesSendToServer,0,length+1,remoteAddr))
-                                                        Log.d("","Sended packet to connect")
-                                                    }else{
-                                                        Log.i("read byte"," length is 0")
-                                                    }
-                                                    packetBuffer.clear()
-                                                    // Thread.sleep(1000)
-                                                }
-                                                Log.i("","while over")
-                                            }else{
-                                                var msg = "create tun dev failed"
-                                                Log.e("",msg)
-                                            }
-                                        }finally {
-                                            Log.d("","jobTunIfceRead over");
-                                            cancelSvc()
-                                        }
-                                    }
-                                }catch (e:Exception){
-                                    Log.e("",e.toString())
-                                }
-                                finally {
-                                    Log.i("","jobTunRead over")
-                                    cancelSvc()
-                                }
-                            }
-                            Log.i("","wating jobs over")
-                            jobConRead.join()
-                            jobTunRead.join()
-                            Log.i("","jobs over")
-                    }catch (e:Exception){
-                            Log.e("","mainBlock exception ${e.toString()}")
-                        }finally {
-                            Log.e("","mainBlock quit")
-                        try{
-                                socket.close()
                             }catch (e:Exception){
-
+                                setFirstReason(e.toString())
+                                Log.e("",e.toString())
+                            }finally {
+                                cancelSvc()
                             }
+                        }
+
+
+                        var jobConRead = launch (Dispatchers.Default){
+                            try{
+                                    var bufLen = 1024*10
+                                    var buf = ByteArray(bufLen);
+                                    var p = DatagramPacket(buf,0,bufLen)
+                                    Log.d("","recving connection packet")
+                                    while(!isOver){
+                                        Log.d("","recving connection packet")
+                                        socket.receive(p);
+                                        Log.d("","rcvd connect packet")
+                                        if (p.data[0] ==(0).toByte() && tunIfce != null){
+                                            Log.d("","write to tunifce ${p.data}")
+                                            var packetWriteToIfce = FileOutputStream(tunIfce?.fileDescriptor)
+                                            packetWriteToIfce.write(p.data,1,p.length-1)
+                                        }else{
+                                            var resBytes = p.data.sliceArray(1..(p.length-1))
+                                            Log.d("","recv app msg ${p.data.sliceArray(1..(p.length-1)).decodeToString()}")
+                                            var msg = apiIns.decodeRes(resBytes.decodeToString())
+                                            when(msg.id){
+                                                (ApiId.S2C_QUERY_IP)->{
+                                                    Log.i("","get clientTunnel ip ")
+                                                    var clientTunnelIp = Json.decodeFromString<resQueryIp>(resQueryIp.serializer(),msg.body)
+                                                    Log.i("","get clientTunnel ip $clientTunnelIp")
+                                                    clientTunnelIpNet = clientTunnelIp.ip_net
+                                                }
+                                                (ApiId.S2C_HEARTBEAT)->{
+                                                    Log.i("","get hearbeat response")
+                                                    heartbeat = LocalDateTime.now()
+                                                }
+                                            }
+                                            // TODO handle custom proto
+                                        }
+                                    }
+                            }catch (e:Exception){
+                                setFirstReason(e.toString())
+                                Log.e("",e.toString())
+                            }
+                            finally {
+                                cancelSvc()
+                            }
+                        }
+                        var jobTunRead = launch (Dispatchers.Default){
+                            try{
+                                Log.d("","wating clientTunnel ip")
+                                while(!isOver){
+                                    delay(1000)
+                                    Log.d("","dealy over")
+                                    if (clientTunnelIpNet.length > 0) {
+                                        Log.i("","get clientTunnelIpNet")
+                                        break
+                                    }
+                                }
+                                if (!isOver){
+                                    mainHandler.post {
+                                        YingTunnelService.onConnected("")
+                                    }
+                                    try{
+                                        Log.i("","start create tun interface")
+                                        var builder  =vpnSvc.Builder()
+
+                                        val localTunnel = builder
+                                            .addAddress(clientTunnelIpNet.slice(0..(clientTunnelIpNet.indexOfFirst {c ->  c=='/'}-1)), 24)
+                                            .addRoute("0.0.0.0", 0)
+                                            .addDnsServer("8.8.8.8").setBlocking(true)
+                                            .establish()
+                                        if (localTunnel != null){
+                                            tunIfce = localTunnel
+                                            // Allocate the buffer for a single packet.
+                                            var packetBuffer     = ByteBuffer.allocate(65535)
+                                            var bytesSendToServer = ByteArray(65536);
+                                            var  packetReadFromIfce = FileInputStream(localTunnel.fileDescriptor)
+                                            var packetWriteToIfce = FileOutputStream(localTunnel.fileDescriptor)
+                                            while (isActive){
+                                                Log.i("","reading packet")
+                                                var length = packetReadFromIfce.read(packetBuffer.array())
+                                                if (length >0){
+                                                    Log.i("read byte",packetBuffer.array().toString())
+                                                    bytesSendToServer[0] = 0
+                                                    var  bytesIpPacket = packetBuffer.array()
+                                                    bytesIpPacket.copyInto(bytesSendToServer,1,0,length)
+                                                    Log.d("","sending packet to connect")
+                                                    socket.send(DatagramPacket(bytesSendToServer,0,length+1,remoteAddr))
+                                                    Log.d("","Sended packet to connect")
+                                                }else{
+                                                    Log.i("read byte"," length is 0")
+                                                }
+                                                packetBuffer.clear()
+                                                // Thread.sleep(1000)
+                                            }
+                                            Log.i("","while over")
+                                        }else{
+                                            var msg = "create tun dev failed"
+                                            Log.e("",msg)
+                                        }
+                                    }finally {
+                                        Log.d("","jobTunIfceRead over");
+                                        cancelSvc()
+                                    }
+                                }
+                            }catch (e:Exception){
+                                setFirstReason(e.toString())
+                                Log.e("",e.toString())
+                            }
+                            finally {
+                                cancelSvc()
+                            }
+                        }
+                        Log.i("","wating jobs over")
+                        jobConRead.join()
+                        jobTunRead.join()
+                        Log.i("","jobs over")
+                    }catch (e:Exception){
+                        setFirstReason(e.toString())
+                        Log.e("","mainBlock exception ${e.toString()}")
+                    }finally {
+                        Log.e("","mainBlock quit")
+                        cancelSvc()
                     }
                 }
                 mainHandler.post {
