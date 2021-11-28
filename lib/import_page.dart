@@ -15,7 +15,7 @@ class ImportCfgPageRoute extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('First Route'),
+        title: Text('Import config'),
       ),
       body: ImportCfgPageBody(
         onAddCfg: onAddCfg,
@@ -81,6 +81,7 @@ class _ImportCfgPageBody extends State<ImportCfgPageBody> {
               };
               await saveFile.writeAsString(jsonEncode(saveObj));
               this.widget.onAddCfg(clientCfg);
+              Navigator.pop(context);
             },
           ),
         ],
