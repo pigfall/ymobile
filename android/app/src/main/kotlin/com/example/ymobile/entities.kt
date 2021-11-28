@@ -1,4 +1,4 @@
-package com.example.ymobile
+package com.koitown.ying
 
 import androidx.annotation.Keep
 import kotlinx.serialization.Serializable

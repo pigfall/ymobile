@@ -1,4 +1,4 @@
-package com.example.ymobile
+package com.koitown.ying
 
 import android.content.Intent
 import android.net.VpnService

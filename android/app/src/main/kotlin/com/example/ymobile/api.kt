@@ -1,4 +1,4 @@
-package com.example.ymobile
+package com.koitown.ying
 
 import kotlinx.serialization.DeserializationStrategy
 import android.util.Log
