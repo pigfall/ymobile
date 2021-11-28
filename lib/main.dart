@@ -240,6 +240,7 @@ class _MyHomePageStateV2 extends State<MyHomePage> {
                   this.cfgs.insert(0, cfg);
                 });
               },
+              existsCfgs: cfgs,
             );
           }));
         },

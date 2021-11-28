@@ -9,7 +9,9 @@ import 'package:ymobile/client_cfg.dart';
 
 class ImportCfgPageRoute extends StatelessWidget {
   final Function(ClientCfg) onAddCfg;
-  const ImportCfgPageRoute({Key? key, required this.onAddCfg})
+  final List<ClientCfg> existsCfgs;
+  const ImportCfgPageRoute(
+      {Key? key, required this.onAddCfg, required this.existsCfgs})
       : super(key: key);
   @override
   Widget build(BuildContext context) {
@@ -19,6 +21,7 @@ class ImportCfgPageRoute extends StatelessWidget {
       ),
       body: ImportCfgPageBody(
         onAddCfg: onAddCfg,
+        existsCfgs: existsCfgs,
       ),
     );
   }
@@ -26,7 +29,10 @@ class ImportCfgPageRoute extends StatelessWidget {
 
 class ImportCfgPageBody extends StatefulWidget {
   final Function(ClientCfg) onAddCfg;
-  const ImportCfgPageBody({Key? key, required this.onAddCfg}) : super(key: key);
+  final List<ClientCfg> existsCfgs;
+  const ImportCfgPageBody(
+      {Key? key, required this.onAddCfg, required this.existsCfgs})
+      : super(key: key);
   @override
   State<StatefulWidget> createState() {
     return _ImportCfgPageBody();
@@ -66,8 +72,21 @@ class _ImportCfgPageBody extends State<ImportCfgPageBody> {
           TextButton(
             child: Text("import"),
             onPressed: () async {
-              var p = await CfgManager.GetCfgDirPath();
               var cfgName = configName.text;
+              for (var existsCfg in this.widget.existsCfgs) {
+                if (existsCfg.id == cfgName) {
+                  showDialog(
+                      context: context,
+                      builder: (context) {
+                        return AlertDialog(
+                          title: Text(
+                              "Config name has existed, change the config name"),
+                        );
+                      });
+                }
+                return;
+              }
+              var p = await CfgManager.GetCfgDirPath();
               var saveFilePath = '${p}/${cfgName}.json';
               var saveFile = await File(saveFilePath);
               var clientCfg = ClientCfg(
