@@ -55,17 +55,10 @@ class MyHomePage extends StatefulWidget {
   final String title;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<MyHomePage> createState() => _MyHomePageStateV2();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-  bool turnOn = false;
-  Future? prevConn = Future.value();
-  String status = "";
-  String curConnCfgId = "";
-  bool pending = false;
-
   static const platform = MethodChannel("ying");
   bool hasloadedConnCfgs = false;
   bool needMannulTriggerLoad = false;
@@ -316,3 +309,222 @@ class Palette {
     },
   );
 } // you can
+
+class _MyHomePageStateV2 extends State<MyHomePage> {
+  static const String DISCONNECTED = "DISCONNECTED";
+  static const platform = MethodChannel("ying");
+  bool hasloadedConnCfgs = false;
+  bool needMannulTriggerLoad = false;
+  ConnStatus connStatus = ConnStatus.DISCONNECTED;
+  late List<ClientCfg> cfgs;
+  ClientCfg? curConnCfg;
+
+  bool isOnDisconnectedStatus() {
+    return this.curConnCfg == null;
+  }
+
+  bool isCurrentClientCfg(String toComparedCfgId) {
+    return this.curConnCfg?.id == toComparedCfgId;
+  }
+
+  Widget buildBody() {
+    if (!this.hasloadedConnCfgs) {
+      return this.onUnloadedCfgs();
+    } else {
+      var children = this.cfgs.map<Widget>((clientCfg) {
+        return Row(
+          children: [
+            Text(clientCfg.id),
+            TextButton(onPressed: () {
+              if (isOnDisconnectedStatus()) {
+                connectTunnel(clientCfg);
+                return;
+              }
+
+              switch (connStatus) {
+                case ConnStatus.DISCONNECTED:
+                  throw (Exception("BUG unreachable"));
+                case ConnStatus.CONNECING:
+                  disconnectTunnel();
+                  break;
+
+                case ConnStatus.CONNECTED:
+                  disconnectTunnel();
+                  break;
+
+                case ConnStatus.DISCONNECTING:
+                  // DO NOTHING
+                  break;
+                default:
+                  throw (Exception("undefined connStatus ${connStatus}"));
+              }
+            }, child: () {
+              if (isOnDisconnectedStatus()) {
+                return Text(DISCONNECTED);
+              }
+              if (!isCurrentClientCfg(clientCfg.id)) {
+                return Text(DISCONNECTED);
+              }
+              return Text(connStatus.toString());
+            }())
+          ],
+        );
+      });
+      var list = children.toList();
+      // list.insert(0, Text(this.connStatus.toString()));
+      return ListView(children: list);
+    }
+  }
+
+  void disconnectTunnel() {
+    setState(() {
+      connStatus = ConnStatus.DISCONNECTING;
+    });
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          return AlertDialog(
+            title: Text("Waiting connection to close"),
+          );
+        });
+    platform.invokeMethod("disconnect").catchError((e) {
+      print(e.toString());
+    }).then((value) {
+      // TODO
+      print("disconnect success ");
+      setState(() {
+        this.connStatus = ConnStatus.DISCONNECTED;
+        curConnCfg = null;
+      });
+      Navigator.pop(context);
+    });
+  }
+
+  _MyHomePageStateV2() {
+    platform.setMethodCallHandler((call) {
+      if (call.method == "onConnectFailed") {
+        if (this.connStatus == ConnStatus.CONNECING ||
+            this.connStatus == ConnStatus.CONNECTED) {
+          showDialog(
+              context: context,
+              builder: (context) {
+                return AlertDialog(
+                  title: Text("Connected Failed"),
+                  content: Text("${call}"),
+                  actions: [
+                    TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        child: Text("close"))
+                  ],
+                );
+              });
+          setState(() {
+            this.connStatus = ConnStatus.DISCONNECTED;
+            this.curConnCfg == null;
+          });
+        }
+      } else if (call.method == "onConnected") {
+        print("onConnected from flutter");
+        setState(() {
+          this.connStatus = ConnStatus.CONNECTED;
+        });
+      } else {
+        print("BUG undefined method ${call.method}");
+        throw (Exception("BUG undefined method ${call.method}"));
+      }
+      return Future.value(0);
+    });
+  }
+
+  Future<String> sleep() {
+    return Future.delayed(Duration(seconds: 10), () {
+      print("sleep over");
+      return "Test";
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+      ),
+      body: Center(
+        child: buildBody(),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) {
+            return ImportCfgPageRoute(
+              onAddCfg: (ClientCfg cfg) {
+                setState(() {
+                  this.cfgs.insert(0, cfg);
+                });
+              },
+            );
+          }));
+        },
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ), // This trailing comma makes auto-formatting nicer for build methods.
+    );
+  }
+
+  Widget onUnloadedCfgs() {
+    if (this.needMannulTriggerLoad) {
+      return TextButton(
+          onPressed: () {
+            setState(() {
+              this.needMannulTriggerLoad = false;
+            });
+          },
+          child: Text("LoadFailed click to try again"));
+    } else {
+      //Future.delayed(Duration(seconds: 3), () {
+      //  setState(() {
+      //    this.needMannulTriggerLoad = true;
+      //  });
+      //});
+      ClientCfg.LoadFromDisk().catchError((error, stackTrace) {
+        print(error);
+        this.needMannulTriggerLoad = true;
+      }).then((cfgs) {
+        this.cfgs = cfgs;
+        setState(() {
+          this.hasloadedConnCfgs = true;
+        });
+      });
+      return Text("Loading");
+    }
+  }
+
+  void connectTunnel(ClientCfg cfg) {
+    setState(() {
+      this.curConnCfg = cfg;
+      this.connStatus = ConnStatus.CONNECING;
+    });
+    platform.invokeMethod("connect").catchError((e) {
+      showDialog(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text("Connect failed ${e}"),
+              actions: [
+                TextButton(
+                    onPressed: () {
+                      setState(() {
+                        connStatus = ConnStatus.DISCONNECTED;
+                        curConnCfg = null;
+                      });
+                      Navigator.pop(context);
+                    },
+                    child: Text("close"))
+              ],
+            );
+          });
+    }).then((value) {});
+  }
+}
