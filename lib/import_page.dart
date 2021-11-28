@@ -72,8 +72,8 @@ class _ImportCfgPageBody extends State<ImportCfgPageBody> {
               var saveFile = await File(saveFilePath);
               var clientCfg = ClientCfg(
                   id: cfgName,
-                  servserHost: serverHost.text,
-                  servserPort: serverPort.text);
+                  serverHost: serverHost.text,
+                  serverPort: serverPort.text);
               var saveObj = {
                 ClientCfg.FieldId: cfgName,
                 ClientCfg.FieldServerHost: serverHost.text,

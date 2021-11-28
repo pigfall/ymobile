@@ -22,17 +22,11 @@ class CfgManager {
     for (var file in files) {
       var content = await file.readAsString();
       var obj = jsonDecode(content);
-      print(
-        ClientCfg(
-            id: obj[ClientCfg.FieldId],
-            servserHost: obj[ClientCfg.FieldServerHost],
-            servserPort: obj[ClientCfg.FieldServerPort]),
-      );
       cfgs.add(
         ClientCfg(
             id: obj[ClientCfg.FieldId],
-            servserHost: obj[ClientCfg.FieldServerHost],
-            servserPort: obj[ClientCfg.FieldServerPort]),
+            serverHost: obj[ClientCfg.FieldServerHost],
+            serverPort: obj[ClientCfg.FieldServerPort]),
       );
     }
     return cfgs;

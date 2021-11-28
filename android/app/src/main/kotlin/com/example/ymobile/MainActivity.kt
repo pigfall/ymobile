@@ -28,6 +28,7 @@ import java.time.LocalDateTime
 class MainActivity: FlutterActivity(){
     companion object {
         var binaryMsg :BinaryMessenger? =null;
+        var clientCfgToUse :EntityClientCfg?=null;
     }
     var yingTunnelSvc:YingTunnelService = YingTunnelService()
     var  REQ_CODE_QUERY_PERMISSION_TO_CREATE_TUNNEL_DEV= 0
@@ -45,6 +46,9 @@ class MainActivity: FlutterActivity(){
             when(call.method){
                 "connect"-> {
                     // result.success("");
+                    Log.i("",call.arguments())
+                    var clientCfg = Json.decodeFromString<EntityClientCfg>(EntityClientCfg.serializer(),call.arguments())
+                    MainActivity.clientCfgToUse= clientCfg
                     stopService(Intent(this,YingTunnelService::class.java))
                     Log.i("","req permission for create tun device")
                     var requestTunnelPermissionIntent:Intent? = VpnService.prepare(applicationContext)
@@ -123,16 +127,27 @@ class TunnelSvc(vpnSvc:YingTunnelService){
         this.tunIfce?.close()
         this.jobHeartbeat?.cancel()
     }
-    fun connect() {
+    fun connect(clientCfg: EntityClientCfg?) {
         var ins = this
         val mainHandler = Handler(Looper.getMainLooper())
-        var remoteAddr = InetSocketAddress("107.155.15.21",10102)
-        var socket = DatagramSocket()
+        var stop = false
+        try{
+            var remoteAddr = InetSocketAddress(clientCfg!!.serverHost,clientCfg!!.serverPort.toInt())
+        }catch (e:Exception){
+            onSvcOver()
+            stop = true
+        }
+        if (stop) {
+            return
+        }
+
         this.th = thread {
             var ins = this
             runBlocking {
                 coroutineScope {
                     try{
+                        var remoteAddr = InetSocketAddress(clientCfg!!.serverHost,clientCfg!!.serverPort.toInt())
+                        var socket = DatagramSocket()
                         Log.d("","tmp")
                         ins.socket = socket
                         var heartbeat =LocalDateTime.now()
@@ -364,7 +379,7 @@ class YingTunnelService:VpnService(){
         curConnection?.disconnect()
         Log.i("","new tunnel conn")
         curConnection = TunnelSvc(this);
-        curConnection?.connect();
+        curConnection?.connect(MainActivity.clientCfgToUse);
     }
 
     override fun onDestroy() {
